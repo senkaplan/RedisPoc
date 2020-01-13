@@ -1,8 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace RedisPoc
+﻿namespace RedisPoc
 {
+    using System;
+    using System.Collections.Generic;
+
     class Program
     {
         static void Main()

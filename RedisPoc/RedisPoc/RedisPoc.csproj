@@ -12,7 +12,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="StackExchange.Redis" Version="2.0.601" />
-    <PackageReference Include="StackExchange.Redis.Extensions.Core" Version="5.5.0" />
   </ItemGroup>
 
 </Project>

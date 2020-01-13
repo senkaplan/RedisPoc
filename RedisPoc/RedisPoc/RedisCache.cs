@@ -1,18 +1,13 @@
-﻿using System;
-using StackExchange.Redis;
-using System.Globalization;
-using System.Linq;
-using System.Collections.Generic;
-using Newtonsoft.Json;
-using System.Text.Json;
-using System.Net.Http;
-using System.Text;
-using Newtonsoft.Json.Linq;
-using System.Text.RegularExpressions;
-using StackExchange.Redis.Extensions;
-
-namespace RedisPoc
+﻿namespace RedisPoc
 {
+    using System;
+    using StackExchange.Redis;
+    using System.Globalization;
+    using System.Linq;
+    using System.Collections.Generic;
+    using Newtonsoft.Json;
+    using System.Text.RegularExpressions;
+
     //Singleton pattern for redis cache
     public class RedisCache
     {
