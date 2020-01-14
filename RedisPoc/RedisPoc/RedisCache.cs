@@ -11,14 +11,18 @@
     //Singleton pattern for redis cache
     public class RedisCache
     {
+        #region Private Variables
+
         //Connection string. For all available configuration options, https://stackexchange.github.io/StackExchange.Redis/Configuration.html
-        const string connectionString = "127.0.0.1:6379,password=kaplan@123,connectRetry=3,defaultDatabase=3";
+        private static string _connectionString;
+
+        private static IDatabase _database;
 
         //lock object to be used for thread synchronization.
         private static readonly object lockObj = new object();
 
-        //RedisCacheHelper Instance
-        private static RedisCache _redisCacheHelper = null;
+        //RedisCache Instance
+        private static RedisCache _redisCache = null;
 
         //json serializer settings
         private static JsonSerializerSettings stringSerializerSetting = new JsonSerializerSettings()
@@ -28,15 +32,10 @@
 
         private static CultureInfo cultureInfo = new CultureInfo("en-US");
 
-        /// <summary>
-        /// Property to set and get the serializer settings for Json serialization
-        /// </summary>
-        public static JsonSerializerSettings StringSerializerSetting
-        {
-            set => stringSerializerSetting = value;
-            get =>  stringSerializerSetting;
-        }
-        
+        #endregion
+
+        #region Public Properties
+
         /// <summary>
         /// Property to set and get the culture Info
         /// </summary>
@@ -49,10 +48,10 @@
         /// <summary>
         /// Property to get the connection object.
         /// </summary>
-        public static ConnectionMultiplexer Connection { get; } = ConnectionMultiplexer.Connect(connectionString);
+        public ConnectionMultiplexer Connection { get; } = ConnectionMultiplexer.Connect(_connectionString);
 
         /// <summary>
-        /// RedisCacheHelper instance property
+        /// RedisCache instance property
         /// </summary>
         public static RedisCache Instance
         {
@@ -60,17 +59,19 @@
             {
                 lock (lockObj)
                 {
-                    if (_redisCacheHelper == null)
+                    if (_redisCache == null)
                     {
-                        _redisCacheHelper = new RedisCache();
+                        _redisCache = new RedisCache();
                     }
                 }
 
-                return _redisCacheHelper;
+                return _redisCache;
             }
         }
 
+        #endregion
 
+        #region Constructor
 
         /// <summary>
         /// private constructor to prevent instance creation outside the class.
@@ -79,6 +80,29 @@
         {
         }
 
+        #endregion
+
+        #region Static Methods
+
+        /// <summary>
+        /// Method to connect to the redis server.
+        /// </summary>
+        /// <param name="connString">The connection string</param>
+        public static void Connect(string connString)
+        {
+            _connectionString = connString;
+            _database = Instance.Connection.GetDatabase();
+        }
+
+        /// <summary>
+        /// Property to set and get the serializer settings for Json serialization
+        /// </summary>
+        public static void SetSerializerSettings(JsonSerializerSettings jsonSerializerSettings)
+        {
+            stringSerializerSetting = jsonSerializerSettings;
+        }
+
+        #endregion
 
         #region String cache
 
@@ -88,10 +112,10 @@
         //Types of strings and operations: 
         //1) Numeric string (eg: "310", "99.79",...). Permitted operations include atomic counters for increment and decrement (high speed atomic operations) with one command to the server.
         //2) Strings: Allows to slice and dice the strings and retrieve parts of it. Index can be calculated from the end or the start of the string. 
-             //You can also append to or overwrite parts of an existing strings without a read/write/update cycle.
+        //You can also append to or overwrite parts of an existing strings without a read/write/update cycle.
         //3) Bit Strings: Since String type is binary safe, you can have a bits datatype to record the statuses of n events or operations or users. Bit level operations are supported 
-            //eg: Number of set bits in the string (number of logged in users).
-            //Using Bits datatype is very efficient in performance. eg: daily login statuses of ten million users will take as less as 1.2mb
+        //eg: Number of set bits in the string (number of logged in users).
+        //Using Bits datatype is very efficient in performance. eg: daily login statuses of ten million users will take as less as 1.2mb
 
         /// <summary>
         /// Generic method to asynchronously cache a string value for a key. 
@@ -104,8 +128,7 @@
         public static void SetCacheString<T>(string key, T value, int timeSpanSeconds)
         {
             string cacheValue = JsonConvert.SerializeObject(value);
-            IDatabase db = Connection.GetDatabase();
-            db.StringSetAsync(key, cacheValue, TimeSpan.FromSeconds(timeSpanSeconds), When.Always, CommandFlags.FireAndForget);
+            _database.StringSetAsync(key, cacheValue, TimeSpan.FromSeconds(timeSpanSeconds), When.Always, CommandFlags.FireAndForget);
         }
 
         /// <summary>
@@ -116,14 +139,13 @@
         /// <returns>Returns the cached value for the key.</returns>
         public static T GetCacheString<T>(string key)
         {
-            IDatabase db = Connection.GetDatabase();
-            string cachedValue = db.StringGet(key);
+
+            string cachedValue = _database.StringGet(key);
             return JsonConvert.DeserializeObject<T>(cachedValue); //Us culture info for format 
         }
 
         #endregion
-
-
+        
         #region Hash Data cache
 
         //Stores a set of hash key value pairs.
@@ -144,14 +166,16 @@
         /// <param name="timeSpanSeconds">The time for which the cache has to be preserved</param>
         public static void SetCacheHash<T>(string key, T value, int timeSpanSeconds)
         {
-            IDatabase db = Connection.GetDatabase();
-            HashEntry[] hashset = value.GetType().GetProperties()
-                .Where(x => x.GetValue(value) != null)
+            //Adding properties
+            List<HashEntry> hashset = value.GetType().GetProperties()
                 .Select(prop => new HashEntry(prop.Name, Stringify(prop.GetValue(value))))
-                .ToArray();
+                .ToList();
 
-            db.HashSet(key, hashset); //Synchronized setting of hashes.
-            db.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget);
+            //Adding fields.
+            hashset.AddRange(value.GetType().GetFields().Select(prop => new HashEntry(prop.Name, Stringify(prop.GetValue(value)))));
+
+            _database.HashSet(key, hashset.ToArray()); //Synchronized setting of hashes.
+            _database.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget);
         }
 
         /// <summary>
@@ -164,10 +188,10 @@
         /// <param name="timeSpanSeconds">The time for which the cache has to be preserved</param>
         public static void SetCacheHashField<T>(string key, string field, T value, int timeSpanSeconds)
         {
-            IDatabase db = Connection.GetDatabase();
 
-            db.HashSet(key, field, JsonConvert.SerializeObject(value), When.Always); //Synchronized setting of a field in hash cache.
-            db.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget);
+
+            _database.HashSet(key, field, JsonConvert.SerializeObject(value), When.Always); //Synchronized setting of a field in hash cache.
+            _database.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget);
         }
 
 
@@ -180,8 +204,8 @@
         /// <returns>Returns the cached hashset for the given key</returns>
         public static T GetCacheHash<T>(string key)
         {
-            IDatabase db = Connection.GetDatabase();
-            Dictionary<string, string> kvPairs = db.HashGetAll(key).ToDictionary(pair => pair.Name.ToString(), pair => pair.Value.ToString());
+
+            Dictionary<string, string> kvPairs = _database.HashGetAll(key).ToDictionary(pair => pair.Name.ToString(), pair => pair.Value.ToString());
             return DeserializeKeyValuePairs<T>(kvPairs);
         }
 
@@ -194,21 +218,19 @@
         /// <returns>Returns the cached hashset field value for the key and the field name.</returns>
         public static T GetCacheHashField<T>(string key, string field)
         {
-            IDatabase db = Connection.GetDatabase();
-            return DeserializeRedisValue<T>(db.HashGet(key, field));
+
+            return DeserializeRedisValue<T>(_database.HashGet(key, field));
         }
 
         #endregion
-
-
+        
         #region List Cache
 
         // Lists: Acts like a linked list, Stack and Queue at the same time(operations supported). Can be traversed from head or tail.
         // Allows insertion at a specified index with a cost on performance.
         // Allows duplicates. 
         // Also can maintain a fixed-length lists by trimming the list to a specific size after every insertion.
-
-
+        
         #region Queue
 
         //Queue implementation using Redis list.
@@ -225,9 +247,9 @@
         /// <param name="timeSpanSeconds">The time for which the cache has to be preserved</param>
         public static void SetCacheQueue<T>(string key, T value, int timeSpanSeconds)
         {
-            IDatabase db = Connection.GetDatabase();
-            db.ListRightPush(key, Stringify<T>(value), When.Always); //Add value to the end of the list
-            db.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget); //Set expire time.
+
+            _database.ListRightPush(key, Stringify<T>(value), When.Always); //Add value to the end of the list
+            _database.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget); //Set expire time.
         }
 
 
@@ -240,9 +262,9 @@
         /// <param name="timeSpanSeconds">The time for which the cache has to be preserved</param>
         public static void SetCacheQueueRange<T>(string key, T[] values, int timeSpanSeconds)
         {
-            IDatabase db = Connection.GetDatabase();
-            db.ListRightPush(key, values.Select(x => (RedisValue)Stringify<T>(x)).ToArray()); //Add a range of values to the end of the list.
-            db.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget); //Set expire time
+
+            _database.ListRightPush(key, values.Select(x => (RedisValue)Stringify<T>(x)).ToArray()); //Add a range of values to the end of the list.
+            _database.KeyExpireAsync(key, TimeSpan.FromSeconds(timeSpanSeconds), CommandFlags.FireAndForget); //Set expire time
         }
 
         /// <summary>
@@ -254,19 +276,19 @@
         /// <returns>Returns the first element from the queue</returns>
         public static T GetCacheQueue<T>(string key, bool erase)
         {
-            IDatabase db = Connection.GetDatabase();
+
             RedisValue value = new RedisValue();
 
             if (erase)
             {
-                value = db.ListLeftPop(key); //Synchronously pop(get and delete) the first element 
+                value = _database.ListLeftPop(key); //Synchronously pop(get and delete) the first element 
             }
             else
             {
-                value = db.ListRange(key,0,0).FirstOrDefault(); //Synchronously get the first element 
+                value = _database.ListRange(key, 0, 0).FirstOrDefault(); //Synchronously get the first element 
             }
 
-            return DeserializeRedisValue<T>(value) ; //Deserialize element
+            return DeserializeRedisValue<T>(value); //Deserialize element
         }
 
         /// <summary>
@@ -279,32 +301,29 @@
         /// <returns>Returns the first 'count' elements from the queue</returns>
         public static T[] GetCacheQueueRange<T>(string key, int count, bool erase)
         {
-            IDatabase db = Connection.GetDatabase();
-            RedisValue[] values = db.ListRange(key, 0, count - 1);
+
+            RedisValue[] values = _database.ListRange(key, 0, count - 1);
 
             //If erase, then delete the elements from the list.
             if (erase)
             {
-                db.ListTrim(key, count,-1); //Synchronously trim the elements from 0 to count - 1 
+                _database.ListTrim(key, count, -1); //Synchronously trim the elements from 0 to count - 1 
             }
 
             return (values.Select(x => DeserializeRedisValue<T>(x)).ToArray()); //get top elements from 0 to count -1
         }
 
         #endregion
-
-
+        
         #region Stack
 
         ///A stack implementation can also be achieved using the methods specified above.
         ///For a stack, it is always LeftPush and LeftPop
 
         #endregion
-
-
+            
         #endregion
-
-
+            
         #region Sets
         /// A set is used to store unique unordered strings. If the same element is added twice, it will only show up once.
         /// Sets are used for saving space and time when the only purpose is to check for existence of a value.  
@@ -315,7 +334,6 @@
 
         #endregion
 
-
         #region Sorted Sets
 
         /// They are actually a combination of sets(unique items) and skip lists(a combination of Arrays and Linked List)
@@ -324,8 +342,7 @@
 
         #endregion
 
-
-        #region Common
+        #region Common Methods
 
         /// <summary>
         /// Method to stringify objects
@@ -334,10 +351,10 @@
         /// <param name="value">The value to be stringified</param>
         /// <returns>Returns the stringified json equivalent </returns>
         private static string Stringify<T>(T value)
-        { 
-            return value.GetType() == typeof(string) ? value.ToString() : JsonConvert.SerializeObject(value,typeof(T), stringSerializerSetting);
+        {
+            return value.GetType() == typeof(string) ? value.ToString() : JsonConvert.SerializeObject(value, typeof(T), stringSerializerSetting);
         }
-        
+
         /// <summary>
         /// Method to deserialize a key value pair to an object.
         /// </summary>

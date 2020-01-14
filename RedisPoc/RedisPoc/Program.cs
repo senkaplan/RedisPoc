@@ -8,8 +8,13 @@
         static void Main()
         {
 
-            ////Testing string. Simple object
-            Test1 test1_str = new Test1()
+
+            string redisConnString = "127.0.0.1:6379,password=kaplan@123,connectRetry=3,defaultDatabase=0"; //Redis connection string
+            RedisCache.Connect(redisConnString); // Connect to the redis server.
+
+            #region stringcache
+
+            Test1 test1 = new Test1()
             {
                 value1 = 59,
                 value2 = "string test",
@@ -20,25 +25,20 @@
                 ValTup = new Tuple<string, string>("asdhjadja", "kjrjkrk")
             };
 
-            test1_str.ValDict = new Dictionary<string, string>();
-            test1_str.ValDict.Add("test111", "test3");
-            test1_str.ValDict.Add("test1343", "ssadasdasa");
+            test1.ValDict = new Dictionary<string, string>();
+            test1.ValDict.Add("test111", "test3");
+            test1.ValDict.Add("test1343", "ssadasdasa");
+            
+            RedisCache.SetCacheString<Test1>("key1", test1, 28800); //28800 seconds = 8 hours
+            var test1_res = RedisCache.GetCacheString<Test1>("key1");
 
+            #endregion
 
-            Test1 test1_str_2 = new Test1() { value1 = 60, value2 = "string test11" };
-            RedisCache.SetCacheString<Test1>("key1", test1_str, 28800); //28800 seconds = 8 hours
-            var value1_str = RedisCache.GetCacheString<Test1>("key1");
+            #region Hash Data Cache
 
-            //Testing string. Nested object
-            Test2 test2_str = new Test2() { value1 = 69, valString = "teststring", value2 = new Test3() { value1 = 25, value2 = "starting" } };
-            Test2 test2_str_2 = new Test2() { value1 = 100, valString = "teststring454", value2 = new Test3() { value1 = 100, value2 = "starting123" } };
-            RedisCache.SetCacheString<Test2>("key2", test2_str, 28800); //28800 seconds = 8 hours
-            var value2_str = RedisCache.GetCacheString<Test2>("key2");
-
-            //Testing hash. Simple object
-            Test1 test1 = new Test1() { value1 = 89, value2 = "TestHashing" };
-            RedisCache.SetCacheHash<Test1>("key5", test1, 28800); //28800 seconds = 8 hours
-            var value1 = RedisCache.GetCacheHash<Test1>("key5");
+            //Testing hash. A very complex object with all types of fields and variables.
+            RedisCache.SetCacheHash("key5", test1, 28800); //28800 seconds = 8 hours
+            var tes = RedisCache.GetCacheHash<Test1>("key5");
 
             //Testing hash. Nested object.
             Test2 test2 = new Test2() { value2 = new Test3() { value1 = 25, value2 = "starting" }, valString = "TestingStringHashField", value1 = 90 };
@@ -62,6 +62,11 @@
             RedisCache.SetCacheHash<Test5>("key8", test5, 28800); //28800 seconds = 8 hours
             var value5 = RedisCache.GetCacheHash<Test5>("key8");
 
+            #endregion
+
+            #region List 
+
+            #region Queue
 
             //Test Queue. String Arrays
             RedisCache.SetCacheQueue("key9", "test0", 28800);
@@ -73,8 +78,8 @@
 
 
             //Test Queue. Object Arrays
-            RedisCache.SetCacheQueue("key10", test1_str, 28800);
-            RedisCache.SetCacheQueueRange("key10", new Test1[] { test1_str, test1_str_2, test1_str }, 28800);
+            RedisCache.SetCacheQueue("key10", test1, 28800);
+            RedisCache.SetCacheQueueRange("key10", new Test1[] { test1, test1, test1 }, 28800);
             Test1 list_obj = RedisCache.GetCacheQueue<Test1>("key10", false);
             Test1 list_0_obj = RedisCache.GetCacheQueue<Test1>("key10", true);
             Test1[] list_1_obj = RedisCache.GetCacheQueueRange<Test1>("key10", 2, false);
@@ -82,12 +87,16 @@
 
 
             //Test Queue. Nested Object Arrays
-            RedisCache.SetCacheQueue("key11", test2_str, 28800);
-            RedisCache.SetCacheQueueRange("key11", new Test2[] { test2_str_2, test2_str, test2_str_2 }, 28800);
-            Test2 list_obj_nested = RedisCache.GetCacheQueue<Test2>("key11", false);
-            Test2 list_0_obj_nested = RedisCache.GetCacheQueue<Test2>("key11", true);
-            Test2[] list_1_obj_nested = RedisCache.GetCacheQueueRange<Test2>("key11", 2, false);
-            Test2[] list_2_obj_nested = RedisCache.GetCacheQueueRange<Test2>("key11", 2, true);
+            RedisCache.SetCacheQueue("key11", test1, 28800);
+            RedisCache.SetCacheQueueRange("key11", new Test1[] { test1, test1, test1 }, 28800);
+            Test1 list_obj_nested = RedisCache.GetCacheQueue<Test1>("key11", false);
+            Test1 list_0_obj_nested = RedisCache.GetCacheQueue<Test1>("key11", true);
+            Test1[] list_1_obj_nested = RedisCache.GetCacheQueueRange<Test1>("key11", 2, false);
+            Test1[] list_2_obj_nested = RedisCache.GetCacheQueueRange<Test1>("key11", 2, true);
+
+            #endregion
+
+            #endregion
 
         }
 
@@ -96,15 +105,20 @@
 
     public class Test1
     {
-        public int value1 { get; set; }  //Json serializer works only with properties
+        public int value1 { get; set; }  
         public string value2 { get; set; }
         public TestEnum Testenum { get; set; }
+
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Testing")]
         public List<Test3> value3 { get; set; }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Testing")]
         public List<Test3> valuepubliclist;
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Testing")]
         public string value4;
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Testing")]
         public Dictionary<string, string> ValDict { get; set; }
 
         public Tuple<string, string> ValTup { get; set; }
@@ -120,21 +134,21 @@
 
     public class Test2
     {
-        public int value1 { get; set; } //Json serializer works only with properties
+        public int value1 { get; set; } 
         public string valString { get; set; }
         public Test3 value2 { get; set; }
     }
 
     public class Test3
     {
-        public int value1 { get; set; } //Json serializer works only with properties
+        public int value1 { get; set; } 
         public string value2 { get; set; }
     }
 
 
     public class Test4
     {
-        public int value1 { get; set; }//Json serializer works only with properties
+        public int value1 { get; set; }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "Testing")]
         public string[] value2 { get; set; }
@@ -143,7 +157,7 @@
 
     public class Test5
     {
-        public int value1 { get; set; } //Json serializer works only with properties
+        public int value1 { get; set; } 
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006:Naming Styles", Justification = "Testing")]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Testing")]
